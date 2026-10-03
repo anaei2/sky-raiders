@@ -1072,7 +1072,7 @@ let bossesDefeated=0,survivorPhases=0;
 
 // MULTIPLAYER ONLINE
 let mpSocket=null, mpRoom=null, mpReady=false;
-const MP_SERVER=(window.SKY_RAIDERS_SERVER||'').trim();
+const MP_SERVER=(window.SKY_RAIDERS_SERVER||'wss://sky-raiders-server-srtq.onrender.com').trim();
 function setMpStatus(text,online=false){const el=document.getElementById('mpStatus');const dot=document.getElementById('mpStatusDot');if(el)el.textContent=text;if(dot)dot.classList.toggle('online',online)}
 function openMultiplayer(){openPanel('multiplayer');connectMultiplayer()}
 function closeMultiplayer(){leaveRoom();closePanels()}
