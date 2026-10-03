@@ -10,9 +10,18 @@ wss.on('connection',ws=>{
   const player={ws,name:'Pilot',ready:false,room:null};
   send(ws,{type:'connected'});
   ws.on('message',raw=>{let m;try{m=JSON.parse(raw)}catch{return}
-    if(m.type==='create'){const code=Math.random().toString(36).slice(2,8).toUpperCase();const room={code,name:m.name||'Sky Raiders',players:[]};rooms.set(code,room);player.room=room;room.players.push(player);send(ws,{type:'roomCreated',code,name:room.name});broadcast(room,{type:'roomState',players:room.players.map(p=>({name:p.name,ready:p.ready}))});}
+    if(m.type==='create'){const code=Math.random().toString(36).slice(2,8).toUpperCase();const room={code,name:m.name||'Sky Raiders',players:[],started:false};rooms.set(code,room);player.room=room;room.players.push(player);send(ws,{type:'roomCreated',code,name:room.name});broadcast(room,{type:'roomState',players:room.players.map(p=>({name:p.name,ready:p.ready}))});}
     else if(m.type==='join'){const room=rooms.get(String(m.code||'').toUpperCase());if(!room){send(ws,{type:'error',message:'Sala não encontrada'});return}if(room.players.length>=8){send(ws,{type:'error',message:'Sala cheia'});return}player.room=room;player.name=m.playerName||'Pilot';room.players.push(player);send(ws,{type:'joined',code:room.code,name:room.name});broadcast(room,{type:'roomState',players:room.players.map(p=>({name:p.name,ready:p.ready}))});}
-    else if(m.type==='ready'&&player.room){player.ready=!!m.ready;broadcast(player.room,{type:'roomState',players:player.room.players.map(p=>({name:p.name,ready:p.ready}))});}
+    else if(m.type==='ready'&&player.room){
+      player.ready=!!m.ready;
+      const room=player.room;
+      broadcast(room,{type:'roomState',players:room.players.map(p=>({name:p.name,ready:p.ready}))});
+      const canStart=room.players.length>=2 && room.players.every(p=>p.ready);
+      if(canStart && !room.started){
+        room.started=true;
+        broadcast(room,{type:'match_start',phase:Number(m.phase||1)});
+      }
+    }
     else if(m.type==='gameState'&&player.room){broadcast(player.room,{type:'gameState',from:player.name,state:m.state});}
     else if(m.type==='leave'){leave(player);}
   });
