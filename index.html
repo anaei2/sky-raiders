@@ -480,7 +480,7 @@ body.loaded{overflow:auto}
 #gamePlayer.equippedAim .antenna{box-shadow:0 0 16px #ffe56b}
 #gamePlayer.equippedShield .shipCore{border-color:#64eaff}
 #gamePlayer .eqBadge{position:absolute;z-index:30;left:50%;top:-32px;transform:translateX(-50%);font:700 8px Arial;letter-spacing:1px;color:#9ff6ff;background:#061525dd;border:1px solid #4bdff6;border-radius:6px;padding:3px 6px;white-space:nowrap;opacity:.9}
-#mpRemotePlayer{position:absolute;left:0;top:0;z-index:4;pointer-events:none;transform:translate(-50%,-50%) scale(.92);display:none;filter:drop-shadow(0 0 10px #7de7ff88)}
+#mpRemotePlayer{position:absolute;left:0;top:0;z-index:4;pointer-events:none;transform:translate(-50%,-50%) scale(.39);display:none;filter:drop-shadow(0 0 10px #7de7ff88)}
 #mpRemotePlayer .mpRemoteTag{position:absolute;left:50%;top:-34px;transform:translateX(-50%);font:900 9px Arial;letter-spacing:.5px;color:#dffcff;background:#071827dd;border:1px solid #59ddff;border-radius:6px;padding:3px 6px;white-space:nowrap}
 #mpRemotePlayer .gameFlame{opacity:.8}
 
@@ -1079,11 +1079,11 @@ let bossesDefeated=0,survivorPhases=0;
 // MULTIPLAYER ONLINE
 let mpSocket=null, mpRoom=null, mpReady=false;
 const MP_SERVER=(window.SKY_RAIDERS_SERVER||'wss://sky-raiders-server-srtq.onrender.com').trim();
-let mpIsHost=false, mpActive=false, mpLastEnemySync=0, mpLastPlayerSync=0, mpRemotePlayerId=null;
+let mpIsHost=false, mpActive=false, mpLastEnemySync=0, mpLastPlayerSync=0, mpRemotePlayerId=null, remoteShotEls=new Map();
 function mpRemoteEl(){return document.getElementById('mpRemotePlayer')}
-function hideRemotePlayer(){const el=mpRemoteEl();if(el)el.style.display='none';mpRemotePlayerId=null}
-function showRemotePlayer(name,x,y){const el=mpRemoteEl();if(!el)return;el.style.display='block';el.style.left=x+'px';el.style.top=y+'px';const tag=document.getElementById('mpRemoteTag');if(tag)tag.textContent=name||'PILOTO'}
-function syncMpPlayer(t){if(!mpActive||!mpSocket||mpSocket.readyState!==1||t-mpLastPlayerSync<70)return;mpLastPlayerSync=t;sendMp({type:'playerSnapshot',playerId,name:profileName,x:Math.round(px*10)/10,y:Math.round(py*10)/10,phase:selectedPhase})}
+function hideRemotePlayer(){const el=mpRemoteEl();if(el)el.style.display='none';mpRemotePlayerId=null;for(const el of remoteShotEls.values())el.remove();remoteShotEls.clear()}
+function showRemotePlayer(name,x,y,remoteShots=[]){const el=mpRemoteEl();if(!el)return;el.style.display='block';el.style.left=x+'px';el.style.top=y+'px';const tag=document.getElementById('mpRemoteTag');if(tag)tag.textContent=name||'PILOTO';const live=new Set();for(const s of (Array.isArray(remoteShots)?remoteShots:[])){const id=String(s.id);live.add(id);let bolt=remoteShotEls.get(id);if(!bolt){bolt=document.createElement('div');bolt.className='energyBolt mpRemoteShot';document.getElementById('gameScene').appendChild(bolt);remoteShotEls.set(id,bolt)}bolt.style.left=Number(s.x)||0;bolt.style.top=Number(s.y)||0;bolt.style.transform=`translate(-50%,-50%) rotate(${Math.atan2(Number(s.dx)||0,-(Number(s.v)||1))*57.2958}deg)`;}for(const [id,bolt] of remoteShotEls){if(!live.has(id)){bolt.remove();remoteShotEls.delete(id)}}}
+function syncMpPlayer(t){if(!mpActive||!mpSocket||mpSocket.readyState!==1||t-mpLastPlayerSync<70)return;mpLastPlayerSync=t;sendMp({type:'playerSnapshot',playerId,name:profileName,x:Math.round(px*10)/10,y:Math.round(py*10)/10,phase:selectedPhase,shots:shots.slice(0,12).map((s,i)=>({id:String(i)+':'+Math.round(s.x)+':'+Math.round(s.y),x:Math.round(s.x*10)/10,y:Math.round(s.y*10)/10,v:s.v,dx:s.dx||0}))})}
 function setMpStatus(text,online=false){const el=document.getElementById('mpStatus');const dot=document.getElementById('mpStatusDot');if(el)el.textContent=text;if(dot)dot.classList.toggle('online',online)}
 function openMultiplayer(){openPanel('multiplayer');connectMultiplayer()}
 function closeMultiplayer(){leaveRoom();closePanels()}
@@ -1108,7 +1108,7 @@ function handleMpMessage(raw){
   else if(m.type==='joined'){mpRoom=m.code;mpIsHost=String(m.hostId||'')===String(playerId);mpActive=false;document.getElementById('mpCreatedCode').textContent=m.code;setMpStatus('Você entrou na sala',true);}
   else if(m.type==='roomState'){const box=document.getElementById('mpPlayers');if(box)box.innerHTML=m.players.map(p=>`<div class="mpPlayer"><span class="onlineDot"></span>${p.name||'PILOTO'} <b>${p.ready?'PRONTO':'AGUARDANDO'}</b></div>`).join('');if(m.hostId)mpIsHost=String(m.hostId)===String(playerId);}
   else if(m.type==='match_start'){selectedPhase=Math.max(1,Math.min(900,Number(m.phase||selectedPhase)));mpReady=true;mpActive=true;mpIsHost=String(m.hostId||'')===String(playerId);mpRemotePlayerId=null;setMpStatus('Partida iniciada para todos!',true);showToast('PARTIDA INICIADA!');closePanels();hideRemotePlayer();startGame(false);}
-  else if(m.type==='playerSnapshot'){if(!mpActive||String(m.playerId)===String(playerId))return;showRemotePlayer(m.name,m.x,m.y);mpRemotePlayerId=m.playerId;}
+  else if(m.type==='playerSnapshot'){if(!mpActive||String(m.playerId)===String(playerId))return;showRemotePlayer(m.name,m.x,m.y,m.shots);mpRemotePlayerId=m.playerId;}
   else if(m.type==='enemySnapshot'){if(mpIsHost||!mpActive)return;selectedPhase=Math.max(1,Math.min(900,Number(m.phase||selectedPhase)));wave=Math.max(1,Number(m.wave||wave));applyMpEnemySnapshot(Array.isArray(m.enemies)?m.enemies:[]);}
   else if(m.type==='enemyHit'){if(mpActive)applyRemoteEnemyHit(m);}
   else if(m.type==='phase_complete'){if(mpActive&&!mpIsHost){setTimeout(()=>completePhase(true),0);}}
