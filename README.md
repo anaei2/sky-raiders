@@ -1,9 +1,5 @@
-# Sky Raiders
+# Sky Raiders V36 — Multiplayer sincronizado
 
-## GitHub
-- `index.html` = jogo
-- `server/` = servidor multiplayer
-- `render.yaml` = configuração do Render
+O jogo usa o servidor WebSocket em `wss://sky-raiders-server-srtq.onrender.com`.
 
-## Render
-Crie um Web Service apontando para `server`, Build Command `npm install` e Start Command `npm start`.
+O host da sala mantém os inimigos e o chefão sincronizados. Quando o chefão é destruído, a conclusão da fase é enviada para todos os jogadores.

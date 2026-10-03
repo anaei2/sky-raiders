@@ -1023,8 +1023,10 @@ const panels=['hangar','fleet','shop','missions','upgrades','event','leaderboard
 const SAVE_KEY='skyRaidersV7Save';
 const SAVE_BACKUP_KEY='skyRaidersV7Save_backup';
 const SAVE_VERSION=2;
-let coins=10000,gems=1000,gunLv=1,armorLv=1,engineLv=1,missionKills=0;
-let profileName='Muito Satisfatório', totalScore=0, completedPhases=new Set(), selectedPhase=1, achievements=new Set();
+let coins=0,gems=0,gunLv=1,armorLv=1,engineLv=1,missionKills=0;
+let playerId=localStorage.getItem('skyRaidersPlayerId')||('user'+Math.floor(100000+Math.random()*900000));
+localStorage.setItem('skyRaidersPlayerId',playerId);
+let profileName=localStorage.getItem('skyRaidersDefaultProfileName')||playerId, totalScore=0, completedPhases=new Set(), selectedPhase=1, achievements=new Set();
 let ownedFrames=new Set(['frame_default']), ownedLogos=new Set(['logo_star']), equippedFrame='frame_default', equippedLogo='logo_star', claimedRewards=new Set();
 let selectedEquipment='plasmaCannonS';
 const EQUIPMENT={
@@ -1073,6 +1075,7 @@ let bossesDefeated=0,survivorPhases=0;
 // MULTIPLAYER ONLINE
 let mpSocket=null, mpRoom=null, mpReady=false;
 const MP_SERVER=(window.SKY_RAIDERS_SERVER||'wss://sky-raiders-server-srtq.onrender.com').trim();
+let mpIsHost=false, mpActive=false, mpLastEnemySync=0;
 function setMpStatus(text,online=false){const el=document.getElementById('mpStatus');const dot=document.getElementById('mpStatusDot');if(el)el.textContent=text;if(dot)dot.classList.toggle('online',online)}
 function openMultiplayer(){openPanel('multiplayer');connectMultiplayer()}
 function closeMultiplayer(){leaveRoom();closePanels()}
@@ -1087,13 +1090,13 @@ function connectMultiplayer(){
   }catch(e){setMpStatus('Falha na conexão.')}
 }
 function sendMp(data){if(mpSocket&&mpSocket.readyState===1)mpSocket.send(JSON.stringify(data));}
-function createRoom(){const name=(document.getElementById('mpRoomName').value||'SALA SKY').trim().slice(0,16);if(!MP_SERVER){const code=Math.random().toString(36).slice(2,8).toUpperCase();mpRoom=code;document.getElementById('mpCreatedCode').textContent=code;setMpStatus('Sala criada localmente. Conecte o servidor para jogar online.');return;}if(!mpSocket||mpSocket.readyState!==1){connectMultiplayer();setMpStatus('Conectando ao servidor...');return setTimeout(()=>{if(mpSocket&&mpSocket.readyState===1)sendMp({type:'create',name});},250);}sendMp({type:'create',name});}
-function joinRoom(){const code=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();if(!code)return showToast('Digite o código da sala');if(!mpSocket||mpSocket.readyState!==1){connectMultiplayer();setMpStatus('Conectando ao servidor...');return setTimeout(()=>{if(mpSocket&&mpSocket.readyState===1)sendMp({type:'join',code});},250);}sendMp({type:'join',code});}
-function toggleReady(){if(!mpRoom){showToast('Crie ou entre em uma sala primeiro');return;}mpReady=!mpReady;document.getElementById('mpReadyBtn').textContent=mpReady?'PRONTO ✓':'PRONTO';sendMp({type:'ready',room:mpRoom,ready:mpReady,phase:selectedPhase});setMpStatus(mpReady?'Você está pronto • aguardando o outro jogador':'Você cancelou o pronto',mpReady);}
-function leaveRoom(){if(mpRoom)sendMp({type:'leave',room:mpRoom});mpRoom=null;mpReady=false;const c=document.getElementById('mpCreatedCode');if(c)c.textContent='—';}
+function createRoom(){const name=(document.getElementById('mpRoomName').value||'SALA SKY').trim().slice(0,16);if(!MP_SERVER){const code=Math.random().toString(36).slice(2,8).toUpperCase();mpRoom=code;document.getElementById('mpCreatedCode').textContent=code;setMpStatus('Sala criada localmente. Conecte o servidor para jogar online.');return;}if(!mpSocket||mpSocket.readyState!==1){connectMultiplayer();setMpStatus('Conectando ao servidor...');return setTimeout(()=>{if(mpSocket&&mpSocket.readyState===1)sendMp({type:'create',name,playerName:profileName,playerId});},250);}sendMp({type:'create',name,playerName:profileName,playerId});}
+function joinRoom(){const code=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();if(!code)return showToast('Digite o código da sala');if(!mpSocket||mpSocket.readyState!==1){connectMultiplayer();setMpStatus('Conectando ao servidor...');return setTimeout(()=>{if(mpSocket&&mpSocket.readyState===1)sendMp({type:'join',code,playerName:profileName,playerId});},250);}sendMp({type:'join',code,playerName:profileName,playerId});}
+function toggleReady(){if(!mpRoom){showToast('Crie ou entre em uma sala primeiro');return;}mpReady=!mpReady;document.getElementById('mpReadyBtn').textContent=mpReady?'PRONTO ✓':'PRONTO';sendMp({type:'ready',room:mpRoom,ready:mpReady,phase:selectedPhase,playerName:profileName,playerId});setMpStatus(mpReady?'Você está pronto • aguardando o outro jogador':'Você cancelou o pronto',mpReady);}
+function leaveRoom(){if(mpRoom)sendMp({type:'leave',room:mpRoom});mpRoom=null;mpReady=false;mpActive=false;mpIsHost=false;const c=document.getElementById('mpCreatedCode');if(c)c.textContent='—';}
 function handleMpMessage(raw){let m;try{m=JSON.parse(raw)}catch{return;}if(m.type==='roomCreated'){mpRoom=m.code;document.getElementById('mpCreatedCode').textContent=m.code;setMpStatus('Sala criada • aguardando jogadores',true)}if(m.type==='joined'){mpRoom=m.code;document.getElementById('mpCreatedCode').textContent=m.code;setMpStatus('Você entrou na sala',true)}if(m.type==='roomState'){const box=document.getElementById('mpPlayers');if(!box)return;box.innerHTML=m.players.map(p=>`<div class="mpPlayer"><span class="onlineDot"></span>${p.name||'PILOTO'} <b>${p.ready?'PRONTO':'AGUARDANDO'}</b></div>`).join('')}if(m.type==='error'){setMpStatus(m.message||'Erro no multiplayer.');showToast(m.message||'Erro no multiplayer.')}if(m.type==='match_start'){selectedPhase=Math.max(1,Math.min(900,Number(m.phase||selectedPhase)));mpReady=true;setMpStatus('Partida iniciada para todos!',true);showToast('PARTIDA INICIADA!');closePanels();startGame(false)}}
 function readSave(key){try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw):null}catch(e){return null}}
-function loadSave(){try{const primary=readSave(SAVE_KEY), backup=readSave(SAVE_BACKUP_KEY);let d=primary;const pc=primary?.completedPhases?.length||0,bc=backup?.completedPhases?.length||0;if(!d&&backup)d=backup;else if(backup&&bc>pc)d=backup;if(d){coins=Number(d.coins??coins);gems=Number(d.gems??gems);gunLv=Number(d.gunLv??1);armorLv=Number(d.armorLv??1);engineLv=Number(d.engineLv??1);missionKills=Number(d.missionKills??0);bought=new Set(d.bought||[]);equipped=Object.assign(equipped,d.equipped||{});ownedShips=new Set(d.ownedShips||['falcon']);selectedShip=d.selectedShip||'falcon';profileName=(d.profileName&&d.profileName!=='PILOTO ALMEIDA')?d.profileName:'Muito Satisfatório';totalScore=Number(d.totalScore??0);completedPhases=new Set(d.completedPhases||[]);selectedPhase=Math.max(1,Math.min(900,Number(d.selectedPhase||1)));achievements=new Set(d.achievements||[]);bossesDefeated=Number(d.bossesDefeated??0);survivorPhases=Number(d.survivorPhases??0);ownedFrames=new Set(d.ownedFrames||['frame_default']);ownedLogos=new Set(d.ownedLogos||['logo_star']);equippedFrame=d.equippedFrame||'frame_default';equippedLogo=d.equippedLogo||'logo_star';claimedRewards=new Set(d.claimedRewards||[]);}}catch(e){console.warn('Save load failed',e)}}
+function loadSave(){try{const primary=readSave(SAVE_KEY), backup=readSave(SAVE_BACKUP_KEY);let d=primary;const pc=primary?.completedPhases?.length||0,bc=backup?.completedPhases?.length||0;if(!d&&backup)d=backup;else if(backup&&bc>pc)d=backup;if(d){coins=Number(d.coins??coins);gems=Number(d.gems??gems);gunLv=Number(d.gunLv??1);armorLv=Number(d.armorLv??1);engineLv=Number(d.engineLv??1);missionKills=Number(d.missionKills??0);bought=new Set(d.bought||[]);equipped=Object.assign(equipped,d.equipped||{});ownedShips=new Set(d.ownedShips||['falcon']);selectedShip=d.selectedShip||'falcon';profileName=(d.profileName&&d.profileName!=='PILOTO ALMEIDA'&&d.profileName!=='Muito Satisfatório')?d.profileName:playerId;totalScore=Number(d.totalScore??0);completedPhases=new Set(d.completedPhases||[]);selectedPhase=Math.max(1,Math.min(900,Number(d.selectedPhase||1)));achievements=new Set(d.achievements||[]);bossesDefeated=Number(d.bossesDefeated??0);survivorPhases=Number(d.survivorPhases??0);ownedFrames=new Set(d.ownedFrames||['frame_default']);ownedLogos=new Set(d.ownedLogos||['logo_star']);equippedFrame=d.equippedFrame||'frame_default';equippedLogo=d.equippedLogo||'logo_star';claimedRewards=new Set(d.claimedRewards||[]);}}catch(e){console.warn('Save load failed',e)}}
 let savePending=false, saveTimer=0;
 function saveGameNow(){const data={saveVersion:SAVE_VERSION,savedAt:Date.now(),coins,gems,gunLv,armorLv,engineLv,missionKills,bought:[...bought],equipped,ownedShips:[...ownedShips],selectedShip,profileName,totalScore,completedPhases:[...completedPhases],selectedPhase,achievements:[...achievements],bossesDefeated,survivorPhases,ownedFrames:[...ownedFrames],ownedLogos:[...ownedLogos],equippedFrame,equippedLogo,claimedRewards:[...claimedRewards]};try{const current=readSave(SAVE_KEY);if(current&&((current.completedPhases?.length||0)>0||current.totalScore||current.coins||current.gems))localStorage.setItem(SAVE_BACKUP_KEY,JSON.stringify(current));localStorage.setItem(SAVE_KEY,JSON.stringify(data));localStorage.setItem('skyRaidersProgressV1',JSON.stringify(data));}catch(e){console.warn('Save write failed',e)}}
 function saveGame(){if(savePending)return;savePending=true;clearTimeout(saveTimer);saveTimer=setTimeout(()=>{savePending=false;saveGameNow()},450)}
@@ -1724,7 +1727,11 @@ function beginCombat(event=false){
   gp.classList.remove('thunder','viper','phantom','titan','falcon','shielded','rapid','damageFlash','equippedWeapon','equippedMotor','equippedShield','equippedArmor','equippedCore','equippedAim');gp.classList.add(selectedShip);applyShipVisual();
   refreshAbilityButton();document.getElementById('wave').textContent=wave;document.getElementById('hp').textContent=hp;document.getElementById('bossHud').classList.remove('show');document.getElementById('score').textContent=score;document.getElementById('comboHud').textContent='COMBO x1';showWave();sfx('power');requestAnimationFrame(loop);
 }
-function completePhase(){if(!running||phaseFinished||eventMode)return;phaseFinished=true;running=false;paused=false;stopMusic();game.style.display='none';document.getElementById('pauseOverlay').classList.remove('show');document.getElementById('bossHud').classList.remove('show');document.getElementById('gameEnemies').innerHTML='';document.querySelectorAll('.powerupDom,.enemyShot').forEach(x=>x.remove());const ph=PHASES[selectedPhase-1]||PHASES[0];const reward=ph.reward;coins+=reward;completedPhases.add(selectedPhase);addPilotXP(100);totalScore+=score;addPassXP(100);const phaseKills=missionKills-phaseKillsStart;if(hp>0)survivorPhases++;if(selectedPhase<PHASES.length&&!completedPhases.has(selectedPhase+1))selectedPhase=Math.min(PHASES.length,selectedPhase+1);saveGame();render();checkAchievements();renderPhases();document.getElementById('phaseEndTitle').textContent='FASE '+String(ph.id).padStart(2,'0')+' CONCLUÍDA';document.getElementById('phaseEndDesc').textContent=ph.name+' • Setor neutralizado com sucesso.';document.getElementById('phaseEndReward').textContent='+'+reward.toLocaleString('pt-BR')+' ★';document.getElementById('phaseEndStats').textContent='Pontuação: '+Math.floor(score).toLocaleString('pt-BR')+' • Inimigos: '+phaseKills;document.getElementById('nextPhaseBtn').textContent=selectedPhase>=PHASES.length?'JOGAR FASE 900':'PRÓXIMA FASE';document.getElementById('phaseEnd').classList.add('show');resetJoy();firePressed=false}
+function serializeMpEnemies(){return enemies.map((e,i)=>({id:e.mpId||i,type:e.type,boss:!!e.boss,x:Math.round(e.x*10)/10,y:Math.round(e.y*10)/10,hp:Math.max(0,e.hp),maxHp:e.maxHp,phase:e.phase||0,shot:e.shot||0}));}
+function syncMpEnemies(t){if(!mpActive||!mpIsHost||!mpSocket||mpSocket.readyState!==1||t-mpLastEnemySync<90)return;mpLastEnemySync=t;sendMp({type:'enemySnapshot',enemies:serializeMpEnemies(),phase:selectedPhase,wave});}
+function applyMpEnemySnapshot(list){const next=[];for(const d of list){let e=enemies.find(x=>String(x.mpId)===String(d.id));if(!e){e={type:d.type,x:d.x,y:d.y,v:0,hp:d.hp,maxHp:d.maxHp,points:0,boss:!!d.boss,dom:makeEnemyDom(d.type,!!d.boss),phase:d.phase||0,shot:d.shot||0,mpId:d.id};}e.type=d.type;e.x=d.x;e.y=d.y;e.hp=d.hp;e.maxHp=d.maxHp;e.boss=!!d.boss;e.phase=d.phase||0;e.shot=d.shot||0;e.dom.style.transform=`translate3d(${e.x}px,${e.y}px,0) translate(-50%,-50%)`;next.push(e)}for(const e of enemies){if(!next.includes(e))e.dom?.remove()}enemies.splice(0,enemies.length,...next);updateBossHud()}
+function applyRemoteEnemyHit(m){const e=enemies.find(x=>String(x.mpId)===String(m.enemyId));if(!e)return;e.hp-=Math.max(0,Number(m.damage)||0);if(e.hp<=0){e.dom?.remove();const i=enemies.indexOf(e);if(i>=0)enemies.splice(i,1);if(e.boss){showToast('CHEFE DESTRUÍDO! +180 ★');setTimeout(()=>completePhase(),120)}}}
+function completePhase(force=false){if(!running||phaseFinished||eventMode)return;if(mpActive&&!mpIsHost&&!force)return;if(mpActive&&mpIsHost)sendMp({type:'phase_complete',phase:selectedPhase});phaseFinished=true;running=false;paused=false;stopMusic();game.style.display='none';document.getElementById('pauseOverlay').classList.remove('show');document.getElementById('bossHud').classList.remove('show');document.getElementById('gameEnemies').innerHTML='';document.querySelectorAll('.powerupDom,.enemyShot').forEach(x=>x.remove());const ph=PHASES[selectedPhase-1]||PHASES[0];const reward=ph.reward;coins+=reward;completedPhases.add(selectedPhase);addPilotXP(100);totalScore+=score;addPassXP(100);const phaseKills=missionKills-phaseKillsStart;if(hp>0)survivorPhases++;if(selectedPhase<PHASES.length&&!completedPhases.has(selectedPhase+1))selectedPhase=Math.min(PHASES.length,selectedPhase+1);saveGame();render();checkAchievements();renderPhases();document.getElementById('phaseEndTitle').textContent='FASE '+String(ph.id).padStart(2,'0')+' CONCLUÍDA';document.getElementById('phaseEndDesc').textContent=ph.name+' • Setor neutralizado com sucesso.';document.getElementById('phaseEndReward').textContent='+'+reward.toLocaleString('pt-BR')+' ★';document.getElementById('phaseEndStats').textContent='Pontuação: '+Math.floor(score).toLocaleString('pt-BR')+' • Inimigos: '+phaseKills;document.getElementById('nextPhaseBtn').textContent=selectedPhase>=PHASES.length?'JOGAR FASE 900':'PRÓXIMA FASE';document.getElementById('phaseEnd').classList.add('show');resetJoy();firePressed=false}
 function closePhaseEnd(){document.getElementById('phaseEnd').classList.remove('show');openPanel('phases')}
 function nextPhase(){document.getElementById('phaseEnd').classList.remove('show');if(selectedPhase>PHASES.length)selectedPhase=PHASES.length;saveGame();startGame(false)}
 
@@ -1768,11 +1775,11 @@ function spawnEnemy(type){
   const baseHp=data[1]*scale+Math.floor(wave/8);
   const e={type,x:50+Math.random()*(c.width-100),y:-70,v:data[0]*(0.9+scale*.1)+wave*.035,hp:baseHp,maxHp:baseHp,
     points:Math.round(data[2]*(0.9+scale*.12)),boss:false,dom:null,phase:Math.random()*10,shot:Math.max(420,800/scale)+Math.random()*900};
-  e.dom=makeEnemyDom(type);enemies.push(e);
+  e.mpId=(window.__mpEnemySeq=(window.__mpEnemySeq||0)+1);e.dom=makeEnemyDom(type);enemies.push(e);
 }
 function spawnBoss(){
   const diff=getDifficulty(selectedPhase),scale=diff.mult*(1+Math.max(0,selectedPhase-1)*.00025),bossHp=(35+wave*3)*scale;const e={type:'boss',x:c.width/2,y:-120,v:.7+scale*.04,hp:bossHp,maxHp:bossHp,points:Math.round(500*scale),boss:true,dom:null,phase:0,shot:Math.max(320,500/scale)};
-  e.dom=makeEnemyDom('boss',true);enemies.push(e);sfx('boss');
+  e.mpId=(window.__mpEnemySeq=(window.__mpEnemySeq||0)+1);e.dom=makeEnemyDom('boss',true);enemies.push(e);sfx('boss');
 }
 function spawnPowerup(x,y){
   const types=[['shield','S'],['rapid','R'],['heal','+'],['bomb','B']];
@@ -1798,7 +1805,7 @@ function collectPower(p,i){
   if(p.type==='rapid'){rapidTime=12000;document.getElementById('gamePlayer').classList.add('rapid')}
   if(p.type==='heal'){hp=Math.min((cachedStats||getStats()).hpMax,hp+40);document.getElementById('hp').textContent=hp}
   if(p.type==='bomb'){
-    enemies.forEach(e=>{e.hp-=6});
+    if(!mpActive || mpIsHost) enemies.forEach(e=>{e.hp-=6});
     enemyShots.length=0;
     showToast('BOMBA DE ENERGIA!');
   }
@@ -1828,7 +1835,7 @@ function loop(t){
 
   spawn+=dt;
   const interval=Math.max(300,eventMode?470-wave*10:760-wave*13);
-  if(spawn>interval){
+  if(spawn>interval && (!mpActive || mpIsHost)){
     spawn=0;
     if(wave%5===0&&enemies.filter(e=>e.boss).length===0&&Math.random()<.2)spawnBoss();
     else{spawnEnemy();if(eventMode||Math.random()<Math.min(.45,wave*.025))spawnEnemy()}
@@ -1855,8 +1862,8 @@ function loop(t){
     if(e.dom)e.dom.style.transform=`translate3d(${e.x}px,${e.y}px,0) translate(-50%,-50%)`;
   });
 
-  enemyShots.forEach(s=>{s.y+=s.v;s.x+=s.dx});
-  for(let i=enemyShots.length-1;i>=0;i--){
+  if(!mpActive || mpIsHost) enemyShots.forEach(s=>{s.y+=s.v;s.x+=s.dx});
+  if(!mpActive || mpIsHost) for(let i=enemyShots.length-1;i>=0;i--){
     const s=enemyShots[i];if(s.y>c.height+40||s.x<0||s.x>c.width){enemyShots.splice(i,1);continue}
     if(Math.hypot(s.x-px,s.y-py)<30){enemyShots.splice(i,1);damage(s.boss?18:10)}
   }
@@ -1868,7 +1875,7 @@ function loop(t){
     if(p.life<=0||p.y>c.height+40){p.dom.remove();powerups.splice(i,1)}
   }
 
-  for(let i=enemies.length-1;i>=0;i--){
+  if(!mpActive || mpIsHost) for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
     if(e.y>c.height+90){e.dom?.remove();enemies.splice(i,1);continue}
     if(Math.hypot(e.x-px,e.y-py)<(e.boss?72:38)){e.dom?.remove();enemies.splice(i,1);damage(e.boss?30:14);boom(e.x,e.y,true);if(!running)return}
@@ -1879,7 +1886,7 @@ function loop(t){
     const e=enemies[i],s=shots[j];
     const statsHit=cachedStats;
     if(Math.hypot(e.x-s.x,e.y-s.y)<(e.boss?65:e.type==='tank'?43:31)*statsHit.range){
-      let dmg=(s.damage||statsHit.damage)*(gunLv>=3?1.35:1);if(Math.random()*100<statsHit.crit)dmg*=1.75;e.hp-=dmg;shots.splice(j,1);if(s.grenade){for(const other of enemies){if(other!==e&&Math.hypot(other.x-e.x,other.y-e.y)<(s.area||78))other.hp-=(s.damage||38)*.65}boom(e.x,e.y,true)}sfx('hitEnemy');
+      let dmg=(s.damage||statsHit.damage)*(gunLv>=3?1.35:1);if(Math.random()*100<statsHit.crit)dmg*=1.75;shots.splice(j,1);if(mpActive&&!mpIsHost){if(e.mpId!=null)sendMp({type:'enemyHit',enemyId:e.mpId,damage:dmg});continue;}e.hp-=dmg;if(s.grenade){for(const other of enemies){if(other!==e&&Math.hypot(other.x-e.x,other.y-e.y)<(s.area||78))other.hp-=(s.damage||38)*.65}boom(e.x,e.y,true)}sfx('hitEnemy');
       if(e.hp<=0){
         const gain=e.points*combo;score+=gain;coins+=e.boss?180:Math.min(18,Math.max(6,Math.floor(6+e.points*.12)));missionKills++;gameSaveDue=true;combo=Math.min(8,combo+1);comboTimer=2500;
         document.getElementById('comboHud').textContent='COMBO x'+combo;
@@ -1897,6 +1904,7 @@ function loop(t){
   const gp=document.getElementById('gamePlayer');gp.style.left=px+'px';gp.style.top=py+'px';
   if(t>=hudRefreshAt-100){document.getElementById('score').textContent=Math.floor(score);document.getElementById('m1').textContent=Math.min(10,missionKills);}
   if(gameSaveDue&&t>=saveRefreshAt){saveGame();gameSaveDue=false;saveRefreshAt=t+2000;}
+  syncMpEnemies(t);
   draw(t);requestAnimationFrame(loop);
 }
 function draw(t){
