@@ -480,6 +480,9 @@ body.loaded{overflow:auto}
 #gamePlayer.equippedAim .antenna{box-shadow:0 0 16px #ffe56b}
 #gamePlayer.equippedShield .shipCore{border-color:#64eaff}
 #gamePlayer .eqBadge{position:absolute;z-index:30;left:50%;top:-32px;transform:translateX(-50%);font:700 8px Arial;letter-spacing:1px;color:#9ff6ff;background:#061525dd;border:1px solid #4bdff6;border-radius:6px;padding:3px 6px;white-space:nowrap;opacity:.9}
+#mpRemotePlayer{position:absolute;left:0;top:0;z-index:4;pointer-events:none;transform:translate(-50%,-50%) scale(.92);display:none;filter:drop-shadow(0 0 10px #7de7ff88)}
+#mpRemotePlayer .mpRemoteTag{position:absolute;left:50%;top:-34px;transform:translateX(-50%);font:900 9px Arial;letter-spacing:.5px;color:#dffcff;background:#071827dd;border:1px solid #59ddff;border-radius:6px;padding:3px 6px;white-space:nowrap}
+#mpRemotePlayer .gameFlame{opacity:.8}
 
 /* ===== V9 PROFILE / PHASES / TRANSITIONS ===== */
 .profile{cursor:pointer}.avatar.frame-gold,.avatar.frame-purple,.avatar.frame-red,.avatar.frame-green,.avatar.frame-rainbow{border-radius:12px}
@@ -987,7 +990,8 @@ body.loaded #loadingScreen{opacity:0;visibility:hidden;pointer-events:none}
     <div class="light navL"></div><div class="light navR"></div>
     <div class="antenna"></div><div class="missile l"></div><div class="missile r"></div>
   </div>
-  <div id="gameEnemies"></div>
+  <div id="mpRemotePlayer" class="ship gameShip falcon"><div class="mpRemoteTag" id="mpRemoteTag">PILOTO</div><div class="shipCore"></div><div class="cockpit"></div><div class="wing wl"></div><div class="wing wr"></div><div class="engine el"></div><div class="engine er"></div><div class="antenna"></div><div class="detailLine dl"></div><div class="detailLine dr"></div><div class="light navL"></div><div class="light navR"></div></div>
+<div id="gameEnemies"></div>
 </div>
 <div class="gameHud">
   <div class="hudBox hpHud">♥ <span id="hp">100</span></div>
@@ -1075,7 +1079,11 @@ let bossesDefeated=0,survivorPhases=0;
 // MULTIPLAYER ONLINE
 let mpSocket=null, mpRoom=null, mpReady=false;
 const MP_SERVER=(window.SKY_RAIDERS_SERVER||'wss://sky-raiders-server-srtq.onrender.com').trim();
-let mpIsHost=false, mpActive=false, mpLastEnemySync=0;
+let mpIsHost=false, mpActive=false, mpLastEnemySync=0, mpLastPlayerSync=0, mpRemotePlayerId=null;
+function mpRemoteEl(){return document.getElementById('mpRemotePlayer')}
+function hideRemotePlayer(){const el=mpRemoteEl();if(el)el.style.display='none';mpRemotePlayerId=null}
+function showRemotePlayer(name,x,y){const el=mpRemoteEl();if(!el)return;el.style.display='block';el.style.left=x+'px';el.style.top=y+'px';const tag=document.getElementById('mpRemoteTag');if(tag)tag.textContent=name||'PILOTO'}
+function syncMpPlayer(t){if(!mpActive||!mpSocket||mpSocket.readyState!==1||t-mpLastPlayerSync<70)return;mpLastPlayerSync=t;sendMp({type:'playerSnapshot',playerId,name:profileName,x:Math.round(px*10)/10,y:Math.round(py*10)/10,phase:selectedPhase})}
 function setMpStatus(text,online=false){const el=document.getElementById('mpStatus');const dot=document.getElementById('mpStatusDot');if(el)el.textContent=text;if(dot)dot.classList.toggle('online',online)}
 function openMultiplayer(){openPanel('multiplayer');connectMultiplayer()}
 function closeMultiplayer(){leaveRoom();closePanels()}
@@ -1093,8 +1101,20 @@ function sendMp(data){if(mpSocket&&mpSocket.readyState===1)mpSocket.send(JSON.st
 function createRoom(){const name=(document.getElementById('mpRoomName').value||'SALA SKY').trim().slice(0,16);if(!MP_SERVER){const code=Math.random().toString(36).slice(2,8).toUpperCase();mpRoom=code;document.getElementById('mpCreatedCode').textContent=code;setMpStatus('Sala criada localmente. Conecte o servidor para jogar online.');return;}if(!mpSocket||mpSocket.readyState!==1){connectMultiplayer();setMpStatus('Conectando ao servidor...');return setTimeout(()=>{if(mpSocket&&mpSocket.readyState===1)sendMp({type:'create',name,playerName:profileName,playerId});},250);}sendMp({type:'create',name,playerName:profileName,playerId});}
 function joinRoom(){const code=(document.getElementById('mpJoinCode').value||'').trim().toUpperCase();if(!code)return showToast('Digite o código da sala');if(!mpSocket||mpSocket.readyState!==1){connectMultiplayer();setMpStatus('Conectando ao servidor...');return setTimeout(()=>{if(mpSocket&&mpSocket.readyState===1)sendMp({type:'join',code,playerName:profileName,playerId});},250);}sendMp({type:'join',code,playerName:profileName,playerId});}
 function toggleReady(){if(!mpRoom){showToast('Crie ou entre em uma sala primeiro');return;}mpReady=!mpReady;document.getElementById('mpReadyBtn').textContent=mpReady?'PRONTO ✓':'PRONTO';sendMp({type:'ready',room:mpRoom,ready:mpReady,phase:selectedPhase,playerName:profileName,playerId});setMpStatus(mpReady?'Você está pronto • aguardando o outro jogador':'Você cancelou o pronto',mpReady);}
-function leaveRoom(){if(mpRoom)sendMp({type:'leave',room:mpRoom});mpRoom=null;mpReady=false;mpActive=false;mpIsHost=false;const c=document.getElementById('mpCreatedCode');if(c)c.textContent='—';}
-function handleMpMessage(raw){let m;try{m=JSON.parse(raw)}catch{return;}if(m.type==='roomCreated'){mpRoom=m.code;document.getElementById('mpCreatedCode').textContent=m.code;setMpStatus('Sala criada • aguardando jogadores',true)}if(m.type==='joined'){mpRoom=m.code;document.getElementById('mpCreatedCode').textContent=m.code;setMpStatus('Você entrou na sala',true)}if(m.type==='roomState'){const box=document.getElementById('mpPlayers');if(!box)return;box.innerHTML=m.players.map(p=>`<div class="mpPlayer"><span class="onlineDot"></span>${p.name||'PILOTO'} <b>${p.ready?'PRONTO':'AGUARDANDO'}</b></div>`).join('')}if(m.type==='error'){setMpStatus(m.message||'Erro no multiplayer.');showToast(m.message||'Erro no multiplayer.')}if(m.type==='match_start'){selectedPhase=Math.max(1,Math.min(900,Number(m.phase||selectedPhase)));mpReady=true;setMpStatus('Partida iniciada para todos!',true);showToast('PARTIDA INICIADA!');closePanels();startGame(false)}}
+function leaveRoom(){if(mpRoom)sendMp({type:'leave',room:mpRoom});mpRoom=null;mpReady=false;mpActive=false;mpIsHost=false;hideRemotePlayer();const c=document.getElementById('mpCreatedCode');if(c)c.textContent='—';}
+function handleMpMessage(raw){
+  let m;try{m=JSON.parse(raw)}catch{return;}
+  if(m.type==='roomCreated'){mpRoom=m.code;mpIsHost=true;mpActive=false;document.getElementById('mpCreatedCode').textContent=m.code;setMpStatus('Sala criada • aguardando jogadores',true);}
+  else if(m.type==='joined'){mpRoom=m.code;mpIsHost=String(m.hostId||'')===String(playerId);mpActive=false;document.getElementById('mpCreatedCode').textContent=m.code;setMpStatus('Você entrou na sala',true);}
+  else if(m.type==='roomState'){const box=document.getElementById('mpPlayers');if(box)box.innerHTML=m.players.map(p=>`<div class="mpPlayer"><span class="onlineDot"></span>${p.name||'PILOTO'} <b>${p.ready?'PRONTO':'AGUARDANDO'}</b></div>`).join('');if(m.hostId)mpIsHost=String(m.hostId)===String(playerId);}
+  else if(m.type==='match_start'){selectedPhase=Math.max(1,Math.min(900,Number(m.phase||selectedPhase)));mpReady=true;mpActive=true;mpIsHost=String(m.hostId||'')===String(playerId);mpRemotePlayerId=null;setMpStatus('Partida iniciada para todos!',true);showToast('PARTIDA INICIADA!');closePanels();hideRemotePlayer();startGame(false);}
+  else if(m.type==='playerSnapshot'){if(!mpActive||String(m.playerId)===String(playerId))return;showRemotePlayer(m.name,m.x,m.y);mpRemotePlayerId=m.playerId;}
+  else if(m.type==='enemySnapshot'){if(mpIsHost||!mpActive)return;selectedPhase=Math.max(1,Math.min(900,Number(m.phase||selectedPhase)));wave=Math.max(1,Number(m.wave||wave));applyMpEnemySnapshot(Array.isArray(m.enemies)?m.enemies:[]);}
+  else if(m.type==='enemyHit'){if(mpActive)applyRemoteEnemyHit(m);}
+  else if(m.type==='phase_complete'){if(mpActive&&!mpIsHost){setTimeout(()=>completePhase(true),0);}}
+  else if(m.type==='error'){setMpStatus(m.message||'Erro no multiplayer.');showToast(m.message||'Erro no multiplayer.');}
+}
+
 function readSave(key){try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw):null}catch(e){return null}}
 function loadSave(){try{const primary=readSave(SAVE_KEY), backup=readSave(SAVE_BACKUP_KEY);let d=primary;const pc=primary?.completedPhases?.length||0,bc=backup?.completedPhases?.length||0;if(!d&&backup)d=backup;else if(backup&&bc>pc)d=backup;if(d){coins=Number(d.coins??coins);gems=Number(d.gems??gems);gunLv=Number(d.gunLv??1);armorLv=Number(d.armorLv??1);engineLv=Number(d.engineLv??1);missionKills=Number(d.missionKills??0);bought=new Set(d.bought||[]);equipped=Object.assign(equipped,d.equipped||{});ownedShips=new Set(d.ownedShips||['falcon']);selectedShip=d.selectedShip||'falcon';profileName=(d.profileName&&d.profileName!=='PILOTO ALMEIDA'&&d.profileName!=='Muito Satisfatório')?d.profileName:playerId;totalScore=Number(d.totalScore??0);completedPhases=new Set(d.completedPhases||[]);selectedPhase=Math.max(1,Math.min(900,Number(d.selectedPhase||1)));achievements=new Set(d.achievements||[]);bossesDefeated=Number(d.bossesDefeated??0);survivorPhases=Number(d.survivorPhases??0);ownedFrames=new Set(d.ownedFrames||['frame_default']);ownedLogos=new Set(d.ownedLogos||['logo_star']);equippedFrame=d.equippedFrame||'frame_default';equippedLogo=d.equippedLogo||'logo_star';claimedRewards=new Set(d.claimedRewards||[]);}}catch(e){console.warn('Save load failed',e)}}
 let savePending=false, saveTimer=0;
@@ -1904,6 +1924,7 @@ function loop(t){
   const gp=document.getElementById('gamePlayer');gp.style.left=px+'px';gp.style.top=py+'px';
   if(t>=hudRefreshAt-100){document.getElementById('score').textContent=Math.floor(score);document.getElementById('m1').textContent=Math.min(10,missionKills);}
   if(gameSaveDue&&t>=saveRefreshAt){saveGame();gameSaveDue=false;saveRefreshAt=t+2000;}
+  syncMpPlayer(t);
   syncMpEnemies(t);
   draw(t);requestAnimationFrame(loop);
 }
